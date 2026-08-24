@@ -1,0 +1,336 @@
+:root {
+  color-scheme: light dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f4f6f1;
+  color: #17221d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 390px;
+  max-width: 390px;
+  background:
+    radial-gradient(circle at top right, rgba(88, 184, 150, 0.2), transparent 38%),
+    #f4f6f1;
+}
+
+main {
+  padding: 18px;
+}
+
+.app-header,
+.section-heading,
+.account-row,
+.account-actions {
+  display: flex;
+  align-items: center;
+}
+
+.app-header,
+.section-heading,
+.account-row {
+  justify-content: space-between;
+}
+
+.app-header {
+  margin-bottom: 14px;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 0;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin-bottom: 10px;
+  font-size: 15px;
+}
+
+.eyebrow {
+  margin-bottom: 3px;
+  color: #31745d;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+}
+
+.card {
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid rgba(30, 78, 60, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 28px rgba(31, 60, 48, 0.07);
+}
+
+label {
+  display: block;
+  margin: 10px 0 5px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #c9d5ce;
+  border-radius: 9px;
+  outline: none;
+  background: #fff;
+  color: #17221d;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 104px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+
+input:focus,
+textarea:focus {
+  border-color: #2a8a66;
+  box-shadow: 0 0 0 3px rgba(42, 138, 102, 0.12);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.primary {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: #176b4e;
+  color: #fff;
+  font-weight: 750;
+}
+
+.primary:hover {
+  background: #10583f;
+}
+
+.secondary {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 12px;
+  border: 1px solid #aac8bb;
+  border-radius: 9px;
+  background: transparent;
+  color: #255f49;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quiet,
+.danger-link,
+.switch-button,
+.delete-button {
+  border: 0;
+  background: transparent;
+}
+
+.quiet {
+  color: #426055;
+  font-size: 12px;
+}
+
+.danger-link {
+  display: block;
+  margin: 12px auto 0;
+  color: #a43737;
+  font-size: 11px;
+}
+
+.centered {
+  display: block;
+  margin: 10px auto 0;
+}
+
+.passwordless-banner {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e5bd68;
+  border-radius: 10px;
+  background: #fff3d3;
+  color: #79510d;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.inline-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.inline-actions .quiet {
+  padding: 10px;
+}
+
+.status {
+  margin-bottom: 12px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: #dff3e9;
+  color: #14583f;
+  font-size: 12px;
+}
+
+.status.error {
+  background: #f9dfdf;
+  color: #8f2727;
+}
+
+.muted {
+  margin-bottom: 8px;
+  color: #5c6c64;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.count {
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e1eee8;
+  color: #23654e;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.account-list {
+  display: grid;
+  gap: 8px;
+}
+
+.account-row {
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dfe8e3;
+  border-radius: 10px;
+  background: #fbfdfc;
+}
+
+.account-copy {
+  min-width: 0;
+}
+
+.account-name,
+.account-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-name {
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.account-meta {
+  color: #66766e;
+  font-size: 10px;
+}
+
+.account-actions {
+  flex: none;
+  gap: 4px;
+}
+
+.switch-button {
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: #e1f0e9;
+  color: #176146;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.delete-button {
+  padding: 6px;
+  color: #9b3434;
+  font-size: 11px;
+}
+
+.footer-actions {
+  padding-bottom: 4px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+code {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root,
+  body {
+    background: #101714;
+    color: #edf5f1;
+  }
+
+  .card {
+    border-color: #293c34;
+    background: rgba(25, 35, 31, 0.94);
+  }
+
+  input,
+  textarea {
+    border-color: #3a5046;
+    background: #111b17;
+    color: #edf5f1;
+  }
+
+  .account-row {
+    border-color: #30433a;
+    background: #14201b;
+  }
+
+  .muted,
+  .account-meta {
+    color: #9fb0a8;
+  }
+
+  .secondary {
+    border-color: #456557;
+    color: #a9d4c2;
+  }
+
+  .passwordless-banner {
+    border-color: #71571f;
+    background: #302612;
+    color: #f2d38c;
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "chatgpt-local-account-switcher",
+  "version": "0.2.0",
+  "description": "Local-only encrypted ChatGPT web account switcher for Chromium browsers.",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuhao-labs/chatgpt-local-account-switcher.git"
+  },
+  "homepage": "https://github.com/liuhao-labs/chatgpt-local-account-switcher#readme",
+  "bugs": {
+    "url": "https://github.com/liuhao-labs/chatgpt-local-account-switcher/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

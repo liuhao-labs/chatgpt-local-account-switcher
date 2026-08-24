@@ -1,0 +1,10 @@
+# Never commit exported browser credentials.
+cookie.txt
+cookies.txt
+*.cookies.txt
+.env
+.env.*
+*.har
+*.log
+playwright-report/
+test-results/

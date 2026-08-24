@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ChatGPT 本地账号切换器</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main>
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">LOCAL ONLY</p>
+          <h1>ChatGPT 账号切换器</h1>
+        </div>
+        <button id="lock-button" class="quiet hidden" type="button">锁定</button>
+      </header>
+
+      <p id="status" class="status hidden" role="status" aria-live="polite"></p>
+
+      <section id="loading-view" class="card">
+        <p>正在读取本地保险库…</p>
+      </section>
+
+      <section id="setup-view" class="card hidden">
+        <h2>创建加密保险库</h2>
+        <p class="muted">口令不会保存，也无法找回。账号会话只以密文形式保存在这个浏览器配置中。</p>
+        <label for="setup-password">保险库口令（至少 10 个字符）</label>
+        <input id="setup-password" type="password" autocomplete="new-password">
+        <label for="setup-confirm">再次输入</label>
+        <input id="setup-confirm" type="password" autocomplete="new-password">
+        <button id="create-vault-button" class="primary" type="button">创建保险库</button>
+        <button id="create-passwordless-button" class="secondary" type="button">免密码创建（私人电脑）</button>
+      </section>
+
+      <section id="unlock-view" class="card hidden">
+        <h2>解锁保险库</h2>
+        <label for="unlock-password">保险库口令</label>
+        <input id="unlock-password" type="password" autocomplete="current-password">
+        <button id="unlock-button" class="primary" type="button">解锁</button>
+        <button id="erase-locked-button" class="danger-link" type="button">忘记口令？清空本地保险库</button>
+      </section>
+
+      <section id="vault-view" class="hidden">
+        <p id="passwordless-banner" class="passwordless-banner hidden">
+          当前为免密码模式：任何能使用此 Edge/Chrome 配置的人都可以直接切换这些账号。
+        </p>
+
+        <section class="card">
+          <div class="section-heading">
+            <h2>已保存账号</h2>
+            <span id="account-count" class="count">0</span>
+          </div>
+          <div id="account-list" class="account-list"></div>
+          <p id="empty-message" class="muted">还没有账号。请在下方导入会话 JSON。</p>
+        </section>
+
+        <section class="card">
+          <h2>导入账号</h2>
+          <p class="muted">登录对应账号后，打开 <code>https://chatgpt.com/api/auth/session</code>，复制完整 JSON。扩展会丢弃 accessToken。</p>
+          <label for="account-label">显示名称（可选）</label>
+          <input id="account-label" type="text" maxlength="80" autocomplete="off" placeholder="例如：工作账号">
+          <label for="session-json">会话 JSON</label>
+          <textarea id="session-json" rows="6" spellcheck="false" autocomplete="off" placeholder="粘贴完整 JSON"></textarea>
+          <button id="import-button" class="primary" type="button">加密保存</button>
+        </section>
+
+        <section class="footer-actions">
+          <button id="remove-password-button" class="danger-link" type="button">取消保险库密码</button>
+          <button id="set-password-button" class="quiet centered hidden" type="button">重新设置保险库密码</button>
+          <button id="erase-vault-button" class="danger-link" type="button">清空本地保险库</button>
+        </section>
+
+        <section id="set-password-panel" class="card hidden">
+          <h2>重新启用密码保护</h2>
+          <label for="new-password">新口令（至少 10 个字符）</label>
+          <input id="new-password" type="password" autocomplete="new-password">
+          <label for="new-password-confirm">再次输入</label>
+          <input id="new-password-confirm" type="password" autocomplete="new-password">
+          <div class="inline-actions">
+            <button id="save-new-password-button" class="primary" type="button">保存新口令</button>
+            <button id="cancel-new-password-button" class="quiet" type="button">取消</button>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
