@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT 本地账号切换器",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Hao Liu and contributors",
   "homepage_url": "https://github.com/liuhao-labs/chatgpt-local-account-switcher",
-  "description": "在本机加密保存 ChatGPT 会话并快速切换账号。不会上传凭据。",
+  "description": "在本机保存 ChatGPT 会话并快速切换账号。不会上传凭据。",
   "permissions": [
     "cookies",
     "storage",

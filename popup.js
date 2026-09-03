@@ -1,4 +1,9 @@
-import { makeDisplayLabel, parseSessionJson } from "./src/core.js";
+import {
+  assertCredentialMatchesAccount,
+  createCredentialExport,
+  makeDisplayLabel,
+  parseSessionJson
+} from "./src/core.js";
 import {
   createEmptyVaultData,
   decryptVault,
@@ -31,14 +36,11 @@ const elements = Object.fromEntries(
     "session-json",
     "import-button",
     "erase-vault-button",
-    "passwordless-banner",
     "remove-password-button",
-    "set-password-button",
-    "set-password-panel",
-    "new-password",
-    "new-password-confirm",
-    "save-new-password-button",
-    "cancel-new-password-button"
+    "credential-form",
+    "credential-form-title",
+    "credential-form-help",
+    "cancel-update-button"
   ].map((id) => [id, document.getElementById(id)])
 );
 
@@ -46,6 +48,7 @@ let vaultData = null;
 let vaultPassword = "";
 let passwordlessMode = false;
 let currentView = "loading-view";
+let updatingAccountId = null;
 
 function showOnly(view) {
   currentView = view;
@@ -58,9 +61,7 @@ function showOnly(view) {
 function renderPasswordMode() {
   const vaultVisible = currentView === "vault-view";
   elements["lock-button"].classList.toggle("hidden", !vaultVisible || passwordlessMode);
-  elements["passwordless-banner"].classList.toggle("hidden", !vaultVisible || !passwordlessMode);
   elements["remove-password-button"].classList.toggle("hidden", !vaultVisible || passwordlessMode);
-  elements["set-password-button"].classList.toggle("hidden", !vaultVisible || !passwordlessMode);
 }
 
 function setStatus(message = "", isError = false) {
@@ -82,6 +83,24 @@ function displayExpiry(expires) {
   } catch {
     return "有效期未知";
   }
+}
+
+function closeAccountMenus(except = null) {
+  for (const menu of elements["account-list"].querySelectorAll("details[open]")) {
+    if (menu !== except) {
+      menu.removeAttribute("open");
+    }
+  }
+}
+
+function createAccountMenuButton(label, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.setAttribute("role", "menuitem");
+  button.addEventListener("click", onClick);
+  return button;
 }
 
 function renderAccounts() {
@@ -111,12 +130,37 @@ function renderAccounts() {
     switchButton.className = "switch-button";
     switchButton.textContent = "切换";
     switchButton.addEventListener("click", () => switchAccount(account, switchButton));
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.className = "delete-button";
-    deleteButton.textContent = "删除";
-    deleteButton.addEventListener("click", () => deleteAccount(account.id));
-    actions.append(switchButton, deleteButton);
+
+    const menu = document.createElement("details");
+    menu.className = "account-menu";
+    menu.addEventListener("toggle", () => {
+      if (menu.open) {
+        closeAccountMenus(menu);
+      }
+    });
+    const menuToggle = document.createElement("summary");
+    menuToggle.className = "account-menu-toggle";
+    menuToggle.textContent = "...";
+    menuToggle.title = "账号操作";
+    menuToggle.setAttribute("aria-label", `${account.label}的账号操作`);
+    const menuItems = document.createElement("div");
+    menuItems.className = "account-menu-items";
+    menuItems.setAttribute("role", "menu");
+    const updateButton = createAccountMenuButton("更新凭证", "account-menu-item", () => {
+      menu.removeAttribute("open");
+      beginCredentialUpdate(account);
+    });
+    const exportButton = createAccountMenuButton("导出凭证", "account-menu-item", () => {
+      menu.removeAttribute("open");
+      exportCredential(account);
+    });
+    const deleteButton = createAccountMenuButton("删除账号", "account-menu-item danger", () => {
+      menu.removeAttribute("open");
+      deleteAccount(account.id);
+    });
+    menuItems.append(updateButton, exportButton, deleteButton);
+    menu.append(menuToggle, menuItems);
+    actions.append(switchButton, menu);
 
     row.append(copy, actions);
     elements["account-list"].append(row);
@@ -160,7 +204,7 @@ async function createVault() {
 }
 
 async function createPasswordlessVault() {
-  if (!window.confirm("免密码模式会让任何能使用这个浏览器配置的人直接访问已保存账号。仍要继续吗？")) {
+  if (!window.confirm("直接使用会让任何能使用这个浏览器配置的人访问已保存账号。仍要继续吗？")) {
     return;
   }
 
@@ -176,7 +220,7 @@ async function createPasswordlessVault() {
     passwordlessMode = true;
     showOnly("vault-view");
     renderAccounts();
-    setStatus("免密码保险库已创建。会话仍以密文保存。");
+    setStatus("本地账号列表已创建。");
   } catch (error) {
     vaultData = null;
     vaultPassword = "";
@@ -210,43 +254,95 @@ async function unlockVault() {
   }
 }
 
+function buildAccountRecord(session, existing, requestedLabel) {
+  const now = new Date().toISOString();
+  return {
+    id: existing?.id ?? crypto.randomUUID(),
+    label: makeDisplayLabel(session, requestedLabel || session.exportLabel || existing?.label),
+    sessionToken: session.sessionToken,
+    expires: session.expires,
+    accountId: session.accountId,
+    accountName: session.accountName,
+    userId: session.userId,
+    userName: session.userName,
+    email: session.email,
+    authProvider: session.authProvider,
+    importedAt: existing?.importedAt ?? now,
+    updatedAt: now
+  };
+}
+
+function resetCredentialForm() {
+  updatingAccountId = null;
+  elements["credential-form-title"].textContent = "添加账号";
+  elements["credential-form-help"].textContent =
+    "登录对应账号后，打开 https://chatgpt.com/api/auth/session，复制完整 JSON。扩展不会保存 accessToken。";
+  elements["account-label"].value = "";
+  elements["session-json"].value = "";
+  elements["import-button"].textContent = "保存账号";
+  elements["cancel-update-button"].classList.add("hidden");
+}
+
+function beginCredentialUpdate(account) {
+  updatingAccountId = account.id;
+  elements["credential-form-title"].textContent = `更新“${account.label}”`;
+  elements["credential-form-help"].textContent =
+    "登录这个账号并复制最新的会话 JSON。账号标识不一致时不会覆盖。";
+  elements["account-label"].value = account.label;
+  elements["session-json"].value = "";
+  elements["import-button"].textContent = "保存更新";
+  elements["cancel-update-button"].classList.remove("hidden");
+  setStatus("");
+  elements["credential-form"].scrollIntoView({ behavior: "smooth", block: "start" });
+  elements["session-json"].focus();
+}
+
 async function importAccount() {
   setBusy(elements["import-button"], true);
   try {
     const session = parseSessionJson(elements["session-json"].value);
     const requestedLabel = elements["account-label"].value;
-    const duplicateIndex = vaultData.accounts.findIndex(
-      (account) =>
-        account.sessionToken === session.sessionToken ||
-        (session.accountId && account.accountId === session.accountId) ||
-        (session.email && account.email === session.email)
-    );
+    let targetIndex;
+    let existing;
+    let statusMessage;
 
-    const existing = duplicateIndex >= 0 ? vaultData.accounts[duplicateIndex] : null;
-    const record = {
-      id: existing?.id ?? crypto.randomUUID(),
-      label: makeDisplayLabel(session, requestedLabel || existing?.label),
-      sessionToken: session.sessionToken,
-      expires: session.expires,
-      accountId: session.accountId,
-      accountName: session.accountName,
-      userId: session.userId,
-      userName: session.userName,
-      email: session.email,
-      authProvider: session.authProvider,
-      importedAt: new Date().toISOString()
-    };
+    if (updatingAccountId) {
+      targetIndex = vaultData.accounts.findIndex((account) => account.id === updatingAccountId);
+      if (targetIndex < 0) {
+        throw new Error("要更新的账号已不存在。");
+      }
+      existing = vaultData.accounts[targetIndex];
+      assertCredentialMatchesAccount(existing, session);
+      statusMessage = "凭证已更新。";
+    } else {
+      targetIndex = vaultData.accounts.findIndex(
+        (account) =>
+          account.sessionToken === session.sessionToken ||
+          (session.accountId && account.accountId === session.accountId) ||
+          (session.email && account.email === session.email)
+      );
+      existing = targetIndex >= 0 ? vaultData.accounts[targetIndex] : null;
+      statusMessage = existing ? "现有账号凭证已更新。" : "账号已保存。";
+    }
 
-    if (duplicateIndex >= 0) {
-      vaultData.accounts.splice(duplicateIndex, 1, record);
+    const record = buildAccountRecord(session, existing, requestedLabel);
+    const previousAccounts = vaultData.accounts;
+    vaultData.accounts = [...previousAccounts];
+    if (targetIndex >= 0) {
+      vaultData.accounts.splice(targetIndex, 1, record);
     } else {
       vaultData.accounts.push(record);
     }
-    await saveVault();
-    elements["session-json"].value = "";
-    elements["account-label"].value = "";
+
+    try {
+      await saveVault();
+    } catch (error) {
+      vaultData.accounts = previousAccounts;
+      throw error;
+    }
+    resetCredentialForm();
     renderAccounts();
-    setStatus(duplicateIndex >= 0 ? "账号会话已更新并重新加密。" : "账号已加密保存。accessToken 未被保存。");
+    setStatus(statusMessage);
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "导入失败。", true);
   } finally {
@@ -278,17 +374,48 @@ async function switchAccount(account, button) {
   }
 }
 
-async function deleteAccount(id) {
-  const account = vaultData.accounts.find((item) => item.id === id);
-  if (!account || !window.confirm(`从加密保险库中删除“${account.label}”？`)) {
+function exportCredential(account) {
+  if (!window.confirm(`导出的 JSON 可直接登录“${account.label}”。任何获得文件的人都能使用这个账号，确定导出吗？`)) {
     return;
   }
-  vaultData.accounts = vaultData.accounts.filter((item) => item.id !== id);
+
+  try {
+    const payload = createCredentialExport(account);
+    const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], {
+      type: "application/json;charset=utf-8"
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = payload.exportedAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    link.href = url;
+    link.download = `chatgpt-credential-${timestamp}.json`;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    setStatus("凭证已导出。导出文件可直接登录，请妥善保管。");
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "导出失败。", true);
+  }
+}
+
+async function deleteAccount(id) {
+  const account = vaultData.accounts.find((item) => item.id === id);
+  if (!account || !window.confirm(`从本地账号列表中删除“${account.label}”？`)) {
+    return;
+  }
+  const previousAccounts = vaultData.accounts;
+  vaultData.accounts = previousAccounts.filter((item) => item.id !== id);
   try {
     await saveVault();
+    if (updatingAccountId === id) {
+      resetCredentialForm();
+    }
     renderAccounts();
-    setStatus("账号已从保险库删除。当前浏览器登录态未改变。");
+    setStatus("账号已从本地列表删除。当前浏览器登录态未改变。");
   } catch (error) {
+    vaultData.accounts = previousAccounts;
     setStatus(error instanceof Error ? error.message : "删除失败。", true);
   }
 }
@@ -297,24 +424,23 @@ function lockVault() {
   vaultData = null;
   vaultPassword = "";
   passwordlessMode = false;
-  elements["session-json"].value = "";
-  elements["account-label"].value = "";
+  resetCredentialForm();
   setStatus("");
   showOnly("unlock-view");
   elements["unlock-password"].focus();
 }
 
 async function eraseVault() {
-  if (!window.confirm("永久删除这个浏览器配置中的加密保险库？此操作不会退出当前 ChatGPT 登录。")) {
+  if (!window.confirm("永久删除这个浏览器配置中保存的全部账号？此操作不会退出当前 ChatGPT 登录。")) {
     return;
   }
   await chrome.storage.local.remove([STORAGE_KEY, LOCAL_UNLOCK_KEY]);
   vaultData = null;
   vaultPassword = "";
   passwordlessMode = false;
-  elements["session-json"].value = "";
+  resetCredentialForm();
   showOnly("setup-view");
-  setStatus("本地保险库已删除。当前浏览器登录态未改变。");
+  setStatus("本地账号已清空。当前浏览器登录态未改变。");
 }
 
 async function removeVaultPassword() {
@@ -333,47 +459,11 @@ async function removeVaultPassword() {
     vaultPassword = localUnlockKey;
     passwordlessMode = true;
     renderPasswordMode();
-    setStatus("保险库密码已取消；下次打开扩展将自动解锁。");
+    setStatus("设置已更新；以后打开扩展将直接显示账号。");
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "取消密码失败。", true);
   } finally {
     setBusy(elements["remove-password-button"], false);
-  }
-}
-
-function showNewPasswordPanel() {
-  elements["set-password-panel"].classList.remove("hidden");
-  elements["new-password"].focus();
-}
-
-function hideNewPasswordPanel() {
-  elements["new-password"].value = "";
-  elements["new-password-confirm"].value = "";
-  elements["set-password-panel"].classList.add("hidden");
-}
-
-async function saveNewPassword() {
-  const password = elements["new-password"].value;
-  const confirmation = elements["new-password-confirm"].value;
-  if (password !== confirmation) {
-    setStatus("两次输入的新口令不一致。", true);
-    return;
-  }
-
-  setBusy(elements["save-new-password-button"], true);
-  try {
-    const encryptedVault = await encryptVault(vaultData, password);
-    await chrome.storage.local.set({ [STORAGE_KEY]: encryptedVault });
-    await chrome.storage.local.remove(LOCAL_UNLOCK_KEY);
-    vaultPassword = password;
-    passwordlessMode = false;
-    hideNewPasswordPanel();
-    renderPasswordMode();
-    setStatus("保险库密码保护已重新启用。");
-  } catch (error) {
-    setStatus(error instanceof Error ? error.message : "设置新口令失败。", true);
-  } finally {
-    setBusy(elements["save-new-password-button"], false);
   }
 }
 
@@ -390,9 +480,15 @@ elements["lock-button"].addEventListener("click", lockVault);
 elements["erase-vault-button"].addEventListener("click", eraseVault);
 elements["erase-locked-button"].addEventListener("click", eraseVault);
 elements["remove-password-button"].addEventListener("click", removeVaultPassword);
-elements["set-password-button"].addEventListener("click", showNewPasswordPanel);
-elements["save-new-password-button"].addEventListener("click", saveNewPassword);
-elements["cancel-new-password-button"].addEventListener("click", hideNewPasswordPanel);
+elements["cancel-update-button"].addEventListener("click", resetCredentialForm);
+
+document.addEventListener("click", (event) => {
+  for (const menu of elements["account-list"].querySelectorAll("details[open]")) {
+    if (!menu.contains(event.target)) {
+      menu.removeAttribute("open");
+    }
+  }
+});
 
 async function initialize() {
   try {

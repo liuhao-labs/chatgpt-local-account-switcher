@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -62,70 +63,98 @@ try {
   });
 
   const extensionId = await extensionIdFromContext(context);
-  const originalPassword = "original local test password";
-  const replacementPassword = "replacement local test password";
   const fakeToken = ["a".repeat(90), "b".repeat(90), "c".repeat(90), "d".repeat(90), "e".repeat(90)].join(".");
-  const fakeSession = JSON.stringify({
+  const updatedToken = ["f".repeat(90), "g".repeat(90), "h".repeat(90), "i".repeat(90), "j".repeat(90)].join(".");
+  const baseSession = {
     user: { id: "user_fake", email: "fake@example.invalid" },
     account: { id: "account_fake", name: "假账号" },
     expires: new Date(Date.now() + 86_400_000).toISOString(),
-    accessToken: "ignored-fake-access-token",
-    sessionToken: fakeToken
-  });
+    accessToken: "ignored-fake-access-token"
+  };
+  const fakeSession = JSON.stringify({ ...baseSession, sessionToken: fakeToken });
+  const updatedSession = JSON.stringify({ ...baseSession, sessionToken: updatedToken });
 
-  phase = "create-and-import";
+  phase = "create-direct-and-import";
   const first = await openPopup(extensionId);
-  await first.locator("#setup-password").fill(originalPassword);
-  await first.locator("#setup-confirm").fill(originalPassword);
-  await first.locator("#create-vault-button").click();
+  first.once("dialog", (dialog) => dialog.accept());
+  await first.locator("#create-passwordless-button").click();
   await first.locator("#vault-view:not(.hidden)").waitFor();
+  const forbiddenWords = /加密|密码|口令|保险库|免密|解锁|锁定/;
+  const directViewIsNeutral = !forbiddenWords.test(await first.locator("body").innerText());
   await first.locator("#session-json").fill(fakeSession);
   await first.locator("#import-button").click();
   await first.locator(".account-row").waitFor();
 
-  phase = "remove-password";
-  first.once("dialog", (dialog) => dialog.accept());
-  await first.locator("#remove-password-button").click();
-  await first.locator("#passwordless-banner:not(.hidden)").waitFor();
+  phase = "update-credential";
+  await first.locator(".account-menu-toggle").click();
+  await first.getByRole("menuitem", { name: "更新凭证" }).click();
+  await first.locator("#session-json").fill(updatedSession);
+  await first.locator("#import-button").click();
+  await first.getByText("凭证已更新。", { exact: true }).waitFor();
   const passwordlessStorage = await first.evaluate(async () => chrome.storage.local.get(["encryptedVault", "localUnlockKey"]));
   const keyStored = typeof passwordlessStorage.localUnlockKey === "string" && passwordlessStorage.localUnlockKey.length >= 40;
-  const secretStillEncrypted = !JSON.stringify(passwordlessStorage.encryptedVault).includes(fakeToken);
+  const secretStillEncrypted =
+    !JSON.stringify(passwordlessStorage.encryptedVault).includes(fakeToken) &&
+    !JSON.stringify(passwordlessStorage.encryptedVault).includes(updatedToken);
+  const credentialUpdated = await first.evaluate(async ({ updatedToken }) => {
+    const stored = await chrome.storage.local.get(["encryptedVault", "localUnlockKey"]);
+    const { decryptVault } = await import(chrome.runtime.getURL("src/vault.js"));
+    const data = await decryptVault(stored.encryptedVault, stored.localUnlockKey);
+    return data.accounts.length === 1 && data.accounts[0].sessionToken === updatedToken;
+  }, { updatedToken });
+
+  phase = "export-credential";
+  await first.locator(".account-menu-toggle").click();
+  first.once("dialog", (dialog) => dialog.accept());
+  const downloadPromise = first.waitForEvent("download");
+  await first.getByRole("menuitem", { name: "导出凭证" }).click();
+  const download = await downloadPromise;
+  const exportedPath = await download.path();
+  const exported = JSON.parse(await readFile(exportedPath, "utf8"));
+  const credentialExported =
+    exported.exportedBy === "chatgpt-local-account-switcher" &&
+    exported.sessionToken === updatedToken &&
+    exported.account?.id === "account_fake" &&
+    !Object.hasOwn(exported, "accessToken");
   await first.close();
 
   phase = "auto-unlock";
   const second = await openPopup(extensionId);
   await second.locator("#vault-view:not(.hidden)").waitFor();
-  await second.locator("#passwordless-banner:not(.hidden)").waitFor();
   const autoUnlocked = (await second.locator(".account-row").count()) === 1;
-
-  phase = "restore-password";
-  await second.locator("#set-password-button").click();
-  await second.locator("#new-password").fill(replacementPassword);
-  await second.locator("#new-password-confirm").fill(replacementPassword);
-  await second.locator("#save-new-password-button").click();
-  await second.locator("#passwordless-banner").waitFor({ state: "hidden" });
-  const protectedStorage = await second.evaluate(async () => chrome.storage.local.get(["encryptedVault", "localUnlockKey"]));
-  const localKeyRemoved = protectedStorage.localUnlockKey == null;
-  await second.close();
-
-  phase = "unlock-with-new-password";
-  const third = await openPopup(extensionId);
-  await third.locator("#unlock-view:not(.hidden)").waitFor();
-  await third.locator("#unlock-password").fill(replacementPassword);
-  await third.locator("#unlock-button").click();
-  await third.locator("#vault-view:not(.hidden)").waitFor();
-  const newPasswordWorks = (await third.locator(".account-row").count()) === 1;
+  const reopenedViewIsNeutral = !forbiddenWords.test(await second.locator("body").innerText());
+  if (process.env.SMOKE_SCREENSHOT) {
+    await second.locator(".account-menu-toggle").click();
+    await second.screenshot({ path: path.resolve(process.env.SMOKE_SCREENSHOT), fullPage: true });
+  }
 
   report({
-    ok: keyStored && secretStillEncrypted && autoUnlocked && localKeyRemoved && newPasswordWorks,
+    ok:
+      directViewIsNeutral &&
+      keyStored &&
+      secretStillEncrypted &&
+      credentialUpdated &&
+      credentialExported &&
+      autoUnlocked &&
+      reopenedViewIsNeutral,
     extensionLoaded: true,
+    directViewIsNeutral,
     keyStored,
     secretStillEncrypted,
+    credentialUpdated,
+    credentialExported,
     autoUnlocked,
-    localKeyRemoved,
-    newPasswordWorks
+    reopenedViewIsNeutral
   });
-  if (!keyStored || !secretStillEncrypted || !autoUnlocked || !localKeyRemoved || !newPasswordWorks) {
+  if (
+    !directViewIsNeutral ||
+    !keyStored ||
+    !secretStillEncrypted ||
+    !credentialUpdated ||
+    !credentialExported ||
+    !autoUnlocked ||
+    !reopenedViewIsNeutral
+  ) {
     process.exitCode = 1;
   }
 } catch (error) {

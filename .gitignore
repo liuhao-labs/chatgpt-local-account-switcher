@@ -2,6 +2,7 @@
 cookie.txt
 cookies.txt
 *.cookies.txt
+chatgpt-credential-*.json
 .env
 .env.*
 *.har

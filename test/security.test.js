@@ -27,3 +27,8 @@ test("extension pages contain no inline script and source avoids risky sinks", a
     assert.equal(source.includes("fetch("), false, filename);
   }
 });
+
+test("credential export artifacts are ignored by Git", async () => {
+  const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
+  assert.match(gitignore, /^chatgpt-credential-\*\.json$/m);
+});

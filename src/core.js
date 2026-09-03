@@ -19,6 +19,7 @@ const MAX_JSON_LENGTH = 200_000;
 const MAX_TOKEN_LENGTH = 20_000;
 const TOKEN_PATTERN = /^[A-Za-z0-9._~-]+$/;
 const ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+const EXPORT_SOURCE = "chatgpt-local-account-switcher";
 
 function cleanText(value, maxLength = 200) {
   if (typeof value !== "string") {
@@ -94,12 +95,70 @@ export function parseSessionJson(source, options = {}) {
     schemaVersion: 1,
     sessionToken,
     expires,
+    exportLabel: cleanText(payload.label, 80),
     accountId: validateAccountId(account.id ?? payload.accountId),
     accountName: cleanText(account.name ?? account.label, 120),
     userId: cleanText(user.id, 200),
     userName: cleanText(user.name, 120),
     email: cleanText(user.email, 254),
     authProvider: cleanText(payload.authProvider ?? payload.auth_provider, 80)
+  };
+}
+
+export function assertCredentialMatchesAccount(account, session) {
+  const identityFields = [
+    ["accountId", "账号"],
+    ["userId", "用户"],
+    ["email", "邮箱"]
+  ];
+
+  for (const [field, label] of identityFields) {
+    const current = cleanText(account?.[field], 254);
+    if (!current) {
+      continue;
+    }
+    const incoming = cleanText(session?.[field], 254);
+    if (!incoming) {
+      throw new Error(`新凭证缺少${label}标识，无法确认属于当前账号。`);
+    }
+    if (incoming !== current) {
+      throw new Error(`新凭证属于另一个${label}，未覆盖原记录。`);
+    }
+    return true;
+  }
+
+  throw new Error("当前记录缺少可比对的账号标识，请删除后重新添加。");
+}
+
+export function createCredentialExport(account, options = {}) {
+  const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const exportedAt = new Date(now);
+  if (!Number.isFinite(exportedAt.getTime())) {
+    throw new Error("导出时间无效。");
+  }
+
+  const expires = account?.expires ? new Date(account.expires) : null;
+  if (expires && !Number.isFinite(expires.getTime())) {
+    throw new Error("凭证过期时间无效。");
+  }
+
+  return {
+    schemaVersion: 1,
+    exportedBy: EXPORT_SOURCE,
+    exportedAt: exportedAt.toISOString(),
+    label: cleanText(account?.label, 80),
+    user: {
+      id: cleanText(account?.userId, 200),
+      name: cleanText(account?.userName, 120),
+      email: cleanText(account?.email, 254)
+    },
+    account: {
+      id: validateAccountId(account?.accountId),
+      name: cleanText(account?.accountName, 120)
+    },
+    expires: expires ? expires.toISOString() : null,
+    authProvider: cleanText(account?.authProvider, 80),
+    sessionToken: validateSessionToken(account?.sessionToken)
   };
 }
 

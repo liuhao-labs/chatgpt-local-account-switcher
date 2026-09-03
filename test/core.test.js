@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   PRIMARY_SESSION_COOKIE,
   SESSION_COOKIE_CHUNK_SIZE,
+  assertCredentialMatchesAccount,
   chunkSessionToken,
+  createCredentialExport,
   isAccountBoundCookieName,
   isManagedSessionCookieName,
   parseSessionJson
@@ -29,6 +31,49 @@ test("session JSON is normalized without retaining accessToken", () => {
   assert.equal(parsed.email, "safe@example.invalid");
   assert.equal(Object.hasOwn(parsed, "accessToken"), false);
   assert.equal(Object.hasOwn(parsed, "WARNING_BANNER"), false);
+});
+
+test("credential exports round-trip without adding an accessToken", () => {
+  const account = {
+    label: "测试导出",
+    sessionToken: fakeToken,
+    expires: future,
+    accountId: "acct_fake",
+    accountName: "个人",
+    userId: "user_fake",
+    userName: "测试账号",
+    email: "safe@example.invalid",
+    authProvider: "fake"
+  };
+  const payload = createCredentialExport(account, { now: Date.parse("2026-09-03T00:00:00Z") });
+  assert.equal(payload.exportedBy, "chatgpt-local-account-switcher");
+  assert.equal(payload.label, "测试导出");
+  assert.equal(payload.sessionToken, fakeToken);
+  assert.equal(Object.hasOwn(payload, "accessToken"), false);
+
+  const parsed = parseSessionJson(JSON.stringify(payload), { now: Date.parse("2026-09-03T00:00:00Z") });
+  assert.equal(parsed.exportLabel, "测试导出");
+  assert.equal(parsed.accountId, "acct_fake");
+  assert.equal(parsed.userId, "user_fake");
+  assert.equal(parsed.sessionToken, fakeToken);
+});
+
+test("credential updates reject another account", () => {
+  assert.equal(
+    assertCredentialMatchesAccount(
+      { accountId: "acct_fake", userId: "user_fake", email: "safe@example.invalid" },
+      { accountId: "acct_fake", userId: "user_changed", email: "changed@example.invalid" }
+    ),
+    true
+  );
+  assert.throws(
+    () => assertCredentialMatchesAccount({ accountId: "acct_fake" }, { accountId: "acct_other" }),
+    /另一个账号/
+  );
+  assert.throws(
+    () => assertCredentialMatchesAccount({ accountId: "acct_fake" }, { accountId: "" }),
+    /缺少账号标识/
+  );
 });
 
 test("expired and malformed sessions are rejected", () => {
