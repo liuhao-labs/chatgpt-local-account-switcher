@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-local-account-switcher",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Local-only ChatGPT web account switcher for Chromium browsers.",
   "private": true,
   "license": "MIT",

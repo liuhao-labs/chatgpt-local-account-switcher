@@ -13,6 +13,17 @@ const playwrightPackage = process.env.PLAYWRIGHT_PACKAGE;
 
 let phase = "startup";
 let context;
+const checks = {
+  extensionLoaded: false,
+  encryptedImport: false,
+  cookieMatches: false,
+  endpointAuthenticated: false,
+  identityMatched: false,
+  allTabsNavigated: false,
+  homepageComposerVisible: false,
+  homepageProfileVisible: false,
+  homepageIdentityMatched: false
+};
 
 function report(result) {
   process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -51,6 +62,39 @@ function reconstructSessionCookie(cookies) {
     .join("");
 }
 
+async function verifyHomepage(page, expected) {
+  await page.bringToFront();
+  const composer = page.locator('[contenteditable="true"]:visible').first();
+  const profile = page.locator([
+    '[data-testid="accounts-profile-button"]',
+    'button[aria-label="打开个人资料菜单"]',
+    'button[aria-label="Open profile menu"]'
+  ].map((selector) => `${selector}:visible`).join(", ")).first();
+  const [composerVisible, profileVisible] = await Promise.all([
+    composer.waitFor({ state: "visible", timeout: 60_000 }).then(() => true, () => false),
+    profile.waitFor({ state: "visible", timeout: 60_000 }).then(() => true, () => false)
+  ]);
+  let identityMatched = false;
+  const identities = [expected.user?.email, expected.user?.name]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => value.trim().toLocaleLowerCase());
+  if (profileVisible && identities.length) {
+    await profile.click();
+    const menu = page.locator('[role="menu"]:visible').first();
+    await menu.waitFor({ state: "visible", timeout: 15_000 });
+    // The menu can become visible before its account details finish rendering.
+    identityMatched = await page.waitForFunction((values) =>
+      [...document.querySelectorAll('[role="menu"]')].some((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 &&
+          values.some((value) => element.innerText.toLocaleLowerCase().includes(value));
+      }), identities, { timeout: 15_000 }
+    ).then(() => true, () => false);
+    await page.keyboard.press("Escape");
+  }
+  return { composerVisible, profileVisible, identityMatched };
+}
+
 try {
   if (!sessionFile || !edgePath || !playwrightPackage) {
     throw new Error("required paths are missing");
@@ -81,6 +125,7 @@ try {
 
   phase = "locate-extension";
   const extensionId = await extensionIdFromContext(context);
+  checks.extensionLoaded = true;
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
 
@@ -94,6 +139,7 @@ try {
   await popup.locator("#session-json").fill(rawSession);
   await popup.locator("#import-button").click();
   await popup.locator(".account-row").waitFor();
+  checks.encryptedImport = true;
 
   phase = "exercise-cookie-switch";
   const switchResult = await popup.evaluate(async ({ password }) => {
@@ -101,6 +147,21 @@ try {
     const { decryptVault } = await import(chrome.runtime.getURL("src/vault.js"));
     const vault = await decryptVault(encryptedVault, password);
     const account = vault.accounts[0];
+    for (const [name, value] of [
+      ["_account", "synthetic-old-account"],
+      ["oai-client-auth-info", "synthetic"]
+    ]) {
+      const cookie = await chrome.cookies.set({
+        url: "https://chatgpt.com/",
+        path: "/",
+        name,
+        value,
+        secure: false
+      });
+      if (!cookie || cookie.secure) {
+        throw new Error("legacy cookie setup failed");
+      }
+    }
     return chrome.runtime.sendMessage({
       type: "switchAccount",
       navigate: false,
@@ -116,7 +177,7 @@ try {
   }
 
   const cookies = await context.cookies("https://chatgpt.com/");
-  const cookieMatches = reconstructSessionCookie(cookies) === expected.sessionToken;
+  checks.cookieMatches = reconstructSessionCookie(cookies) === expected.sessionToken;
 
   phase = "verify-auth-endpoint";
   const authPage = await context.newPage();
@@ -132,27 +193,53 @@ try {
     }
   }
 
-  const endpointAuthenticated = Boolean(actual?.user && (actual.sessionToken || actual.accessToken));
-  const identityMatched = Boolean(
-    endpointAuthenticated &&
+  checks.endpointAuthenticated = Boolean(actual?.user && (actual.sessionToken || actual.accessToken));
+  const hasExpectedIdentity = [expected.user?.id, expected.user?.email, expected.account?.id]
+    .some((value) => typeof value === "string" && value.trim());
+  checks.identityMatched = Boolean(
+    checks.endpointAuthenticated && hasExpectedIdentity &&
     (!expected.user?.id || actual.user?.id === expected.user.id) &&
     (!expected.user?.email || actual.user?.email === expected.user.email) &&
     (!expected.account?.id || actual.account?.id === expected.account.id)
   );
 
-  report({
-    ok: cookieMatches && endpointAuthenticated && identityMatched,
-    extensionLoaded: true,
-    encryptedImport: true,
-    cookieMatches,
-    endpointAuthenticated,
-    identityMatched
-  });
-  if (!cookieMatches || !endpointAuthenticated || !identityMatched) {
+  phase = "prepare-existing-chatgpt-tabs";
+  const homePages = [authPage, await context.newPage()];
+  await Promise.all(homePages.map(async (page) => {
+    await page.goto("https://chatgpt.com/", { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.evaluate(() => {
+      globalThis.__localAccountSwitcherSmokeMarker = true;
+    });
+  }));
+
+  phase = "exercise-popup-switch-and-all-tabs";
+  await Promise.all([
+    ...homePages.map((page) => page.waitForFunction(() => (
+      location.origin === "https://chatgpt.com" &&
+      location.pathname === "/" &&
+      !Object.prototype.hasOwnProperty.call(globalThis, "__localAccountSwitcherSmokeMarker")
+    ), undefined, { timeout: 60_000 })),
+    popup.locator(".switch-button").click()
+  ]);
+  checks.allTabsNavigated = true;
+
+  phase = "verify-homepage-identity";
+  // Profile menus close on tab blur, so inspect one foreground tab at a time.
+  const homepageResults = [];
+  for (const page of homePages) {
+    homepageResults.push(await verifyHomepage(page, expected));
+  }
+  checks.homepageComposerVisible = homepageResults.every((result) => result.composerVisible);
+  checks.homepageProfileVisible = homepageResults.every((result) => result.profileVisible);
+  checks.homepageIdentityMatched = homepageResults.every((result) => result.identityMatched);
+
+  const ok = Object.values(checks).every(Boolean);
+  report({ ok, ...checks });
+  if (!ok) {
     process.exitCode = 1;
   }
 } catch (error) {
-  report({ ok: false, phase, error: error instanceof Error ? error.name : "UnknownError" });
+  report({ ok: false, ...checks, phase, error: error instanceof Error ? error.name : "UnknownError" });
   process.exitCode = 1;
 } finally {
   if (context) {
