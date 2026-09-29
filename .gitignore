@@ -1,6 +1,9 @@
 # Never commit exported browser credentials.
 cookie.txt
 cookies.txt
+session.txt
+session*.json
+session*.txt
 *.cookies.txt
 chatgpt-credential-*.json
 .env
@@ -9,3 +12,4 @@ chatgpt-credential-*.json
 *.log
 playwright-report/
 test-results/
+dist/

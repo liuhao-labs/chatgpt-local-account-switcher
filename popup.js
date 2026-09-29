@@ -352,7 +352,7 @@ async function importAccount() {
 
 async function switchAccount(account, button) {
   setBusy(button, true);
-  setStatus("正在替换本地登录态…");
+  setStatus("正在停止旧页面并替换登录态…");
   try {
     const response = await chrome.runtime.sendMessage({
       type: "switchAccount",
@@ -366,7 +366,7 @@ async function switchAccount(account, button) {
     if (!response?.ok) {
       throw new Error(response?.error || "切换失败。");
     }
-    setStatus("切换完成，正在打开 ChatGPT…");
+    setStatus("本地凭据已替换，正在打开 ChatGPT…");
     setTimeout(() => window.close(), 350);
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "切换失败。", true);
